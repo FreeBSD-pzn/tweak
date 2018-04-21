@@ -1,0 +1,665 @@
+\cfg{html-leaf-level}{0}
+\cfg{chapter}{Section}
+\cfg{text-title-align}{left}
+\cfg{text-indent}{0}
+\cfg{text-chapter-numeric}{yes}
+\cfg{text-chapter-suffix}{. }
+\cfg{text-chapter-underline}{-}
+\cfg{text-section-numeric}{0}{yes}
+\cfg{text-section-suffix}{0}{. }
+\cfg{text-section-underline}{0}{-}
+\cfg{html-chapter-numeric}{yes}
+\cfg{html-chapter-suffix}{. }
+\cfg{html-section-numeric}{0}{yes}
+\cfg{html-section-suffix}{0}{. }
+\cfg{html-section-numeric}{1}{yes}
+\cfg{html-section-suffix}{1}{. }
+
+\title An Efficient Data Structure For A Hex Editor
+
+by \W{http://pobox.com/~anakin/}{Simon Tatham}
+
+\C{intro} Introduction
+
+Hex editors have been around for a long time, and at the very basic
+level they are very simple to write. Since they are mostly used for
+editing files such as executables, which contain a lot of
+cross-references to particular byte positions in the file, a hex
+editor need not have an insert mode in order to be useful. And a hex
+editor without an insert mode is very easy to implement: you simply
+allocate a large enough array for the input file, and use that as
+your data structure. The only operation you really need to be able
+to do efficiently is to jump to a particular byte position, and
+that's precisely what an array makes easy.
+
+On the other hand, an insert mode can be useful in other
+circumstances. Not \e{all} types of file you might want to edit have
+the same restrictions as an executable. And as soon as you want your
+hex editor to have an insert mode, the data structure question
+becomes much more interesting.
+
+In this article I present an efficient and scalable data structure
+which supports all the operations needed by a hex editor.
+
+\C{simple} Simple options
+
+One technique used to support insert mode in editors is to use an
+array larger than the file size, with a gap in it. The file contents
+up to the current cursor position are stored at the start of the
+array; the file contents from the current cursor position to the end
+are stored at the end of the array; and the gap in the middle moves
+about as the cursor does.
+
+This makes insertion easy. When the user inserts an extra character,
+you just add it to one end or other of the gap. On the other hand,
+\e{moving} through the file now becomes a slow operation; it's not
+noticeable when you're moving by a byte, by a line, or even by a
+screenful at a time, but as soon as you try to jump to the start or
+end of the file, or jump to a particular specified file offset,
+suddenly the editor has to bodily shift enormous amounts of file
+data from one end of the gap to the other.
+
+Another slightly better option is to use a linked list of small
+arrays, and to let the arrays vary in size between K and 2K bytes,
+for some fixed minimum block size K. Inserting a single byte in the
+middle of a block doesn't cost too much; occasionally the block will
+grow beyond size 2K and have to be split into two smaller ones, but
+even that isn't too slow.
+
+Jumping to a particular position, however, is still an O(N)
+operation using this structure. In practice it isn't \e{too} bad,
+since the length of the linked list is at worst 1/K times the size
+of the file; but once the file size becomes seriously big, this
+approach does not scale well.
+
+The common problem in both these methods is that as soon as you make
+insertion a constant-time operation, seeking to a given byte
+position becomes linear-time. Whereas in the original array format,
+of course, seeking was constant-time but \e{insertion} became
+linear-time.
+
+\C{trees} Using balanced trees
+
+This is where trees come in. Balanced tree structures (any of AVL
+trees, red-black trees and B-trees) all solve this sort of problem
+for sorted lists. You can insert an element into a balanced tree in
+\e{log} time, and you can search for a particular element in log
+time as well. This sounds like the kind of compromise we want: if
+making insertion constant-time forces seeking to be linear and vice
+versa, we would prefer to arrange for \e{both} to be log-time.
+
+The conventional use of a balanced tree to store a sorted list,
+however, is not immediately helpful to us. The only criterion we
+could reasonably sort on would be byte position in the file; and as
+soon as we store our data as a set of (position, data) pairs, we're
+back to insertion being linear again, because we would have to alter
+the position field of every tree element after the insertion point.
+
+Is there anything we can do to our balanced trees to make this work
+better?
+
+\C{counted-trees} Counted trees
+
+Yes, there is.
+
+Suppose you add an additional field to every node of a balanced
+tree. In that field, you store a count of the number of elements \e{in
+or below} that node.
+
+Operations which alter the tree (insertion and deletion) now have to
+make sure these counts remain accurate. This can be done without
+sacrificing the log-time characteristics of the operations. For
+example, when you add an element, you increment the count of the
+node containing it, and then work back up the tree to the root
+incrementing the counts in all the nodes you go past. Since the
+height of the tree is O(log N), this only takes you O(log N) time.
+
+So we can add counts to a tree and still maintain it efficiently.
+What have the counts bought us?
+
+Once we have counts in a tree, they introduce an entirely new way to
+\e{search} the tree. Starting at the root, we can search down the
+tree by examining the count fields rather than comparing elements as
+usual; and this allows us to find the Nth item in the tree, for any
+N, in a single log-time search. For example, suppose the root tree node
+contains a child with count 54, then an actual element, then a child
+with count 73. Then:
+
+\b If you are trying to get to a position less than 54, then you
+descend straight to the leftmost child.
+
+\b If you are trying to get to \e{exactly} position 54, you return
+the element out of the root node.
+
+\b If you are trying to get to position 55 or greater, you descend
+to the rightmost child, and subtract 55 from your desired position.
+(If you want element 57 of the tree, then you know there are 55
+elements in the tree before the right-hand subtree, so you know you
+want element 2 of the right-hand subtree.)
+
+So now we have a means of finding the Nth item in a tree in a
+log-time search. This is starting to look promising.
+
+The trouble is, we're still stuck with having some sort of sorting
+order on the tree. Now we need to deal with that.
+
+\C{unsorted-trees} Unsorted trees
+
+The simple answer to the sorting problem is to do away with sorting
+the tree at all!
+
+Conventional balanced trees have a sorting order because it's used
+to find elements in the tree, and to know where to add an element.
+But we don't need a sorting order to find things any more, because
+we can use a count-based search to jump to the Nth position. Can we
+also use counts during the tree add operation, to allow us to
+specify \e{where} we want to add our new element?
+
+We can. Tree add algorithms start by searching down the tree to find
+the position where the new element will be inserted. If we do this
+search using counts, in exactly the same way described in
+\k{counted-trees}, then we can add any element we like at any
+position in the tree. Once we do this, of course, we have to throw
+out the sorting order completely, and never do another order-based
+search or insertion again, because they won't work. But that's OK,
+because we didn't need them anyway.
+
+Now we have exactly what we were after in the first place. We
+have a data structure which stores an unordered list of items, in
+such a way that we can insert or delete an item in log time \e{and}
+find the Nth element in log time.
+
+\C{splitjoin} Splitting and joining trees
+
+Now we can begin to get more ambitious. One issue we have not
+addressed yet is cut and paste.
+
+So far I have discussed tree insertion in the assumption that you
+only ever insert one character at a time into your tree. In fact hex
+editors need cut and paste just as much as normal text editors do;
+so we must think about how to insert or remove a larger block of
+data at a time.
+
+One obvious way is to process each byte individually. A ten-byte
+cut operation is ten individual deletions, and a ten-byte paste is
+ten individual insertions. This is fine if you only ever use cut and
+paste to move tiny chunks of data around a large file, but if you
+need to move \e{half the file} from one place to another, things get
+more interesting.
+
+The linked-list structure discussed in \k{simple} would have helped
+a lot with this problem. Linked lists don't just make it easy to
+insert or delete one item: they make it just as easy to unlink an
+enormous chunk of a list once you've found both ends of the chunk,
+and you can link that chunk in somewhere else easily as well.
+
+It turns out that you \e{can} do the same thing with balanced trees.
+At this point it starts to make a difference what kind of balanced
+tree you use: all three of AVL, red-black and B-trees support these
+operations, but the precise methods vary between them. I'm going to
+use B-trees from here on, because the algorithms are slightly simpler.
+
+What we need are two basic operations. Given a counted, unsorted
+B-tree containing an unordered list of items, we need to be able to:
+
+\b Split the tree down the middle, giving two valid B-trees as output.
+
+\b Take two valid B-trees and join them together end-to-end, giving
+one B-tree containing all the data from tree A followed by the data
+from tree B.
+
+This will provide all the operations we need. To unlink a large
+section from the middle of a tree, we split it in two places and
+then join the outer two parts back together; to link a large section
+\e{into} the middle of a tree, we split it at the insertion point,
+join the left half on to the left side of the inserted section, and
+join the right half on to the right side of the inserted section.
+
+\H{joining} Joining two B-trees together
+
+When you add an element to a B-tree, sometimes it ends up increasing
+the size of a leaf node beyond the size limit. When that happens,
+you deal with it by splitting the node in two, and transforming the
+parent node so that where it previously had a single child pointer,
+it now has two child pointers with an element between them. If that
+makes the parent node too big as well, you do the same thing again,
+and so on until you reach the tree root.
+
+Joining two B-trees is therefore reasonably simple, \e{if} you have
+an additional separating element to place in between them. Position
+the two trees so that their leaf nodes are at the same level; now
+(usually) one tree will be shorter than the other. So you can add
+the root of the shorter tree as a sibling of the node next to it in
+the taller tree; their common parent gains one extra child pointer
+(pointing at the root of the shorter tree), separated from its
+neighbour by the additional separating element. If this causes the
+node to increase beyond the maximum size, just split it in two and
+propagate up to its parent, just as in the ordinary insertion
+process.
+
+If the trees were originally the same height, just combine their
+root nodes into a single larger root node. You need an extra element
+to go in between the rightmost child pointer of the left-hand root
+node, and the leftmost child pointer of the right-hand root node;
+and again, this is where your separating element comes in. Again, if
+the new root is too big to be a single node, split it in two and
+create a new root above it.
+
+So it turns out that it's very easy to join two trees together, but
+the algorithm requires a spare element to go in the middle. However,
+we normally don't have such a spare element: we just have two trees.
+This is easily solved, though: we simply start by removing the
+leftmost element of the right-hand tree using the ordinary tree
+deletion algorithm. Then we just do the join algorithm, as described
+above, using the element we just removed as our separator.
+
+\H{splitting} Splitting a B-tree in two
+
+To split a B-tree in two: we are given a tree, and a means of
+searching down the tree to find the split point. (In this
+application, that will be a numeric position, which we check against
+the node counts on the way down; in other situations, we might
+perfectly well want to split an ordinary \e{sorted} B-tree in half,
+so we might have an ordering-based search criterion. It makes no
+difference.)
+
+We start in the simplest possible way. Start at the root node;
+decide which of its subtree pointers you are going to descend down;
+and saw the node in half at that subtree pointer. The two half-nodes
+thus created will \e{each} need a subtree pointer to go on the cut
+end, but that's OK because we're about to saw the next node down in
+half as well and they can have half each. So descend to the next
+node, decide on a split point again, saw that node in half, and put
+a pointer to each half in the two halves of the parent node.
+
+Once we finish this searching-and-cutting pass, we will have
+successfully separated our tree into two parts at the required
+point. However, the result will almost certainly not be a pair of
+\e{valid} B-trees; the chances are that many of the nodes on the cut
+edges will be below the minimum allowed node size. In fact, if at
+any point our search criterion made us descend through the
+\e{endmost} subtree pointer in any node, some of those nodes will
+have no elements in them whatsoever, just a single subtree pointer!
+
+So now we must make a healing pass down the cut edge of each tree,
+to turn it back into a valid B-tree. We can start by throwing away
+the root node if it has nothing but a single subtree pointer (which
+will happen quite often if we split near one end of the original
+tree, since in that case the output trees will almost certainly need
+to be of different heights). Keep doing that until we find a real
+root node.
+
+One child of that node is on the cut edge, so it may be below the
+minimum size. If it is, we solve this using its (valid) neighbour
+node. If the neighbour is large, we can move some subtrees over into
+the undersized node to make two correctly sized nodes; if the
+neighbour is too small and does not have that many subtrees to
+spare, we can instead \e{combine} the undersized node with its
+neighbour. (And it turns out you can always do at least one of
+these: if the neighbour is too large to combine with the undersized
+node, then it \e{must} have enough subtrees for redistribution to
+give two viable nodes.)
+
+The only interesting case is that combining an undersized node with
+its neighbour reduces the number of subtrees of their common parent
+by one. Therefore:
+
+\b As we go down, we arrange for each node on the cut edge to be at
+least \e{one more than} minimum size, in case its size must drop by
+one when we process its child. (This still just about works in all
+cases.)
+
+\b If the first non-trivial root node had only two children (recall
+that the root node in a B-tree is the only node exempt from the
+minimum size limit), and those two children end up having to be
+combined, then the root node must be thrown away again and the
+combined node is the new root.
+
+Once we have sorted out each node, we descend to its child on the
+cut edge, and do the same thing again. Eventually we reach the
+bottom of the tree and every node is of valid size. Then we do the
+same thing to the cut edge of the other tree, and we're done.
+
+\C{copy-on-write} Cloning trees
+
+The splitting and joining algorithms look as if they make cut and
+paste pretty much trivial. You can split a big chunk out of your
+editing buffer into a separate cut buffer easily enough; and then
+you can \q{paste} it somewhere else by joining it back into the
+middle of the editing buffer at a different position.
+
+However, in real life, cut and paste isn't that simple. People often
+want to paste the same data more than once; so you can't just link
+the cut buffer straight into the editing buffer, because then you
+don't still have it to link in again next time. You need to \e{copy}
+the cut buffer and link in the copy. Equally, users often want to
+press Copy rather than Cut, in which case you have to split the
+buffer tree in two places, \e{copy} the middle section, and join all
+three back together.
+
+Copying a tree, it would seem, is inherently an O(N) operation;
+there's no way you can copy a tree containing megabytes of data
+without actually copying all that data.
+
+Or is there?
+
+It turns out that we \e{can} do better than this, by adding another
+annotation field to each tree node. This time, the annotation is a
+\e{reference count}: it counts the number of pointers to the node,
+either from other tree nodes or from the \q{root} field in a tree
+header structure. To begin with, of course, all reference counts are
+1.
+
+Reference counts are normally used for garbage collection. In this
+case, though, I'm going to use them to implement \e{copy-on-write}.
+All of the tree-altering algorithms (insertion and deletion, plus
+the split and join algorithms described above) will now check the
+reference count of a node before attempting to modify it. If they
+find that they need to modify a node with a reference count greater
+than one, they will not modify it. Instead, they will make a copy of
+that node, and use the copy in place of the original. The copy links
+to all the same child nodes as the original, so the reference count
+in each child must be incremented; and the copied node's parent (or
+tree header structure) now links to the copy rather than to the
+original, so the reference count in the original must be
+decremented. Now we are looking at a node with a reference count of
+1, which means nobody else is using it so we can modify it safely.
+
+The effect of this is that it is now a trivial - not merely log-time
+but \e{constant}-time - operation to \e{clone} an entire B-tree, no
+matter how large. We simply create a new tree header structure; we
+point its root field at the root node of the input tree; and we
+increment the reference count on that root node.
+
+Once we have cloned a tree like this, we can treat the original and
+the clone as if they were entirely independent. If you add an
+element to one of them, for example, then a single string of nodes
+from the root down to one leaf will be duplicated and modified, but
+the rest of the trees will still be held in common. You can split
+either tree into lots of little pieces, or join it into the middle
+of a larger one, and never affect the data stored in what was once
+its clone, because every time you touch a node that the other tree
+is depending on, you make your own copy rather than disturbing it.
+
+This allows us to support \e{really} efficient cut and paste in our
+hex editor. You select a 200Mb chunk and press Copy; the buffer tree
+is split in two places (in log time), the middle section is cloned
+(instantly), and the tree is joined back together. You'd hardly know
+anything was different - but the cut buffer now contains a clone of
+\e{part} of the original buffer, most of which consists of nodes
+that are still shared with it. And you can paste in as many copies
+as you like of that chunk, still in no worse than O(log N) time. The
+best bit is that by the time you've done this a few times and have a
+file that's 1600Mb longer than it started out, the hex editor isn't
+actually using up 1600Mb more memory, because most of it is in
+shared nodes! This technique naturally provides a form of
+compression as well as being fast.
+
+\C{lazy-loading} Lazy file loading
+
+In all of the above I have been tacitly assuming that the data
+elements stored in my tree are individual bytes. This would be
+hideously inefficient if I were using AVL or red-black trees, in
+which each node contains precisely one element: for every \e{byte}
+of the file being edited, there would be an overhead of two child
+pointers, a byte count and a reference count. On a normal 32-bit
+machine, that's 20 bytes per node, not counting overhead from the
+memory allocator. A factor of twenty is just ridiculous.
+
+B-trees are a bit more flexible, since they can be made to have a
+large minimum degree. A B-tree with a minimum node size of (say) 512
+can contain up to 1023 bytes of data plus 1024 subtree pointers, and
+those 1023 bytes can be packed together in memory so the overhead is
+now more like a factor of five. Also, since no node in a B-tree ever
+changes its height above ground level, you can just not bother to
+allocate space for the 512 NULL child pointers in your leaf nodes,
+and since the vast majority of your nodes will \e{be} leaf nodes,
+the structure is now closer to being space-efficient.
+
+There are other improvements one could make. For example, there's no
+reason why a B-tree really needs to have the \e{same} minimum node
+degree at every level; so you could have low-degree nodes everywhere
+above the leaf level, and enormous leaf nodes containing 4-8Kb of
+file data. You could move to B+ trees in which no actual data
+elements were stored anywhere except in the leaf nodes, thus saving
+the tiny alignment overheads in the other nodes.
+
+However, there's a better direction to head in. In \k{simple} I
+mentioned the idea of using a linked list as the main data
+structure, and I said that each element of the linked list would be
+a smallish array of file bytes (between size K and 2K). There's no
+reason we couldn't do that in our B-tree-based approach: each
+element stored in the B-tree is no longer a single byte but a small
+block of bytes. It would mean that our element counts no longer
+allowed us to jump to the Nth byte, only to the Nth \e{block}; but
+we can fix that by replacing the element count with a byte count,
+summing the total \e{size} of all the blocks in or below a
+particular tree node. Now, given any byte position, we can do a
+single log-time search and return a data block plus an offset within
+that block.
+
+This technique adds work to all operations. Inserting a byte, for
+example, is now done by finding the block it needs to go into,
+inserting it in that block, and potentially splitting the block into
+two and doing an extra tree operation. Splitting and joining buffers
+involves splitting and joining blocks at each end, and checking to
+make sure undersized blocks are not created. So what does this
+technique buy us, that makes it worthwhile over just storing single
+bytes in the B-tree?
+
+The answer is: once we have a block data structure as our tree
+element, we can start having different \e{types} of block. In
+particular, we can have a type of block which is a placeholder,
+containing nothing but a file offset and length. A block of this
+type indicates \q{at this point in the tree we have N bytes from
+position P in the original file}. Blocks of this type are exempt
+from the normal maximum size for normal literal-data blocks.
+
+The effect of this is that we no longer need to read the entire file
+into memory when we start up. Instead, we just initialise our tree
+trivially, so that it contains nothing but a single placeholder
+block, with offset zero and size equal to the initial file size.
+
+Now whenever we need to read data from the tree, and it turns out
+the data in question is somewhere in a placeholder block, we must
+refer back to the original input file in order to find the data (and
+the placeholder block will tell us where in the file to read it
+from). So before we do any editing, our hex editor is suddenly a
+low-cost hex \e{file viewer}, which just pages back and forth and
+refers to the disk all the time.
+
+But as soon as we start altering parts of the file, the placeholder
+block gets broken up into smaller blocks, and literal-data blocks
+begin to be created in between them. If we cut and paste a section
+including a placeholder block, then the tree can end up containing
+placeholder blocks in a strange order; it might (for example)
+indicate something like \q{the first 192K of the input file; then
+the literal bytes 5B 49 A7; then 25K of the input file starting from
+position 12345; then 512K of the input file starting from position
+204325}.
+
+Now the hex editor \e{looks} as if it's doing exactly the same thing
+as it did to begin with. I can page around the original file; I can
+insert, delete, overwrite, cut, copy and paste to my heart's
+content, and (provided no other process modifies the original file
+under our feet) the data I am manipulating will remain consistent at
+all times with the editing operations I have performed. But there
+wasn't a big delay at startup when the file was loaded in, because
+most of it \e{wasn't} loaded in; and if I list the running processes
+on my system, the hex editor will not be using memory proportional
+to the size of the file. It will only be using memory proportional
+to the \e{changes} I've made to the file.
+
+When I save the file, if there are any placeholder blocks remaining
+in the buffer tree, the hex editor must write out the new version by
+referring to the original. This is the \e{only} remaining operation,
+apart from searching, that takes time proportional to the size of
+the file. And there are \e{no} remaining operations which take
+\e{memory} proportional to the size of the file.
+
+(There is one thing you need to be careful of. Literal data blocks
+must be permitted to fall below the minimum size K if there is no
+literal block next to them to merge with; in particular, this is
+vital if you are writing a binary file from scratch or you would
+never be able to give it a size between zero and K. But this raises
+the possibility that given a pathological sequence of editing
+operations, your data structure might end up being an interleaving
+of one-byte literal blocks and one-byte placeholder blocks, giving a
+huge space overhead. The simplest solution to this is to impose a
+minimum size of 2K on \e{placeholder} blocks, below which you read
+the relevant piece of file data and convert them into literal
+blocks; then they can be merged with adjacent blocks and the worst
+case is no longer terrible.)
+
+We now have a data structure which does pretty much everything you
+could reasonably ask a hex editor to be able to do, and does it all
+at a reasonable memory cost and (apart from the two genuinely
+necessary operations of searching and saving) \e{all} in O(log N)
+time.
+
+\C{further} Further directions
+
+The data structure as I have presented it is suitable for use in a
+high-performance hex editor with an insert mode.
+
+There are a couple more points worth noting.
+
+\H{further-texted} Conventional text editing
+
+This structure would need only minor modifications to be an
+efficient basis for a conventional text editor. In order to do this,
+you would need to be able to jump quickly to a particular \e{line}
+of the file, which means you'd need a node annotation counting
+newlines.
+
+In fact, it's possible to do slightly better than that: we can
+devise a more complex node annotation which tracks the effect of an
+arbitrary byte sequence on the (line, column) position. Assuming
+that a physical tab character always advances the cursor to the next
+multiple of 8 spaces, there are three possibilities:
+
+\b A sequence of bytes containing no newlines or tabs simply adds
+some number A to the column number, and does not affect the line
+number.
+
+\b A sequence of bytes containing no newlines but at least one tab
+has the overall effect of adding some number A to the column, and
+rounding it up to the next number that is congruent to B mod 8.
+
+\b A sequence of bytes containing at least one newline has the
+effect of adding some number A to the \e{line} number, and setting
+the column number to a fixed value B.
+
+These three function schemas are closed under composition (i.e.
+combining any two of them gives another one). Storing one in each
+node of a buffer tree would provide the ability to search directly
+to \e{a particular (line, column) position} in a single log-time
+search. So the text editor could treat its buffer as a simple
+sequence of bytes (or possibly of Unicode characters). This is
+superior to treating the buffer as a sequence of lines, because it
+removes the distinction between inserting \e{within} a line and
+inserting data \e{between} lines. In particular, cut and paste in a
+line-based model is fiddly because lines must be spliced together at
+each end of the pasted region; but cut and paste in this model is as
+trivial as it was in the hex editor - you just cut a sequence of
+bytes, paste it somewhere else, and the line/column indexing
+automatically keeps up no matter what you do.
+
+The only snag is that if you did this, you would probably no longer
+be able to do the trick with placeholder blocks and lazy file
+loading; a text editor tends to need to know in advance where all
+the newlines are in its buffer, so there would probably be no
+alternative to physically loading the file. But in that, at least,
+this data structure is no worse than any other.
+
+\H{undo} Supporting undo
+
+An undo function in an editor \e{conceptually} stores a sequence of
+previous buffer states, and allows you to return to one of them when
+you need to.
+
+Usually, this is not actually implemented by storing copies of the
+entire buffer, since that would be ludicrously wasteful of space!
+Instead, a journal of changes is kept which allows previous buffer
+states to be \e{reconstructed} by reversing the precise changes
+made.
+
+One could do that using this data structure, if one wanted to.
+However, there's another intriguing option. Since cloning an
+arbitrarily large tree is a cheap operation, you could implement
+undo by \e{actually} storing a sequence of clones of previous buffer
+states! The cost of this would be nothing like as bad as it would
+na\u00EF{i}vely appear.
+
+It might still not be ideal, though. Every time you clone a tree and
+the two clones diverge, several nodes must be copied, and if each
+node contains several blocks of literal data then the cost of
+maintaining too many buffer clones might still become prohibitive.
+But it's an interesting possibility regardless.
+
+\C{summary} Summary
+
+I've presented a design for a data structure which implements
+practically every operation required for a hex editor in O(log N)
+time, apart from one or two which genuinely \e{need} to be O(N).
+
+The structure is:
+
+\b A B-tree, each of whose elements is either a small array of 
+literal data bytes, or a placeholder block denoting a section of the
+unmodified input file.
+
+\b Each B-tree node is annotated with the total byte count of all
+the elements in or below that node, allowing a log-time search to
+pinpoint any numeric byte position.
+
+\b Those counts provide the only necessary means of navigating the
+tree, so there is no need for a sorting criterion.
+
+\b Split and join algorithms make it possible to link and unlink
+large chunks from the middle of a buffer at a time.
+
+\b Reference counts implementing copy-on-write allow cloning of
+chunks in constant time.
+
+As a result:
+
+\b Inserting or deleting bytes in the file is a log-time operation.
+
+\b Finding a particular byte position is a log-time operation.
+
+\b Cut and paste is always log-time, no matter how large or complex
+the chunk of data being moved around.
+
+\b Memory usage grows proportionally to the \e{changes} made to the
+file, not the overall file size. (However, memory usage is also
+\e{bounded} by a value proportional to the file size, even if you
+keep editing and re-editing for ever.)
+
+Searching must still be linear (there's no alternative to actually
+reading the data if you need to know anything about its contents),
+and saving the modified output file is linear (because you actually
+must physically write out that much data), but \e{everything} else
+can be done in log time.
+
+I've also sketched a means of converting this into a data structure
+for an ordinary text editor, and suggested interesting implications
+in the area of undo operations.
+
+\C{ref} References
+
+Donald Knuth's \q{The Art of Computer Programming}
+(\W{http://en.wikipedia.org/w/wiki.phtml?title=Special:Booksources&isbn=0201485419}{Addison-Wesley,
+ISBN 0201485419}) presents at least some of the same ideas as this
+article. Counted and unsorted trees are mentioned in volume 3;
+splitting and joining are also described (although Knuth does them
+on AVL trees, which are significantly more fiddly to split than
+B-trees; you have to cut the tree into lots of little pieces, and
+then put them all back together by using the join algorithm
+repeatedly).
+
+\q{Tweak}, a hex editor implementing this data structure, can be
+downloaded at
+\W{http://www.chiark.greenend.org.uk/~sgtatham/tweak/}\cw{http://www.chiark.greenend.org.uk/~sgtatham/tweak/}.
+
+\versionid tweak version 3.02
