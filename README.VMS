@@ -1,0 +1,337 @@
+TWEAK on OpenVMS.
+To compile TWEAK on OpenVMS simple run makefile.com:
+$ @makefile
+
+To run TWEAK make a symbol:
+$ tweak :== "$DISK:[PATH_TO_TWEAK.EXE]TWEAK.EXE"
+------------------------------------------------
+To use TWEAK:
+$ SET TERMINAL/PASTHRU
+$ tweak --help -> get help
+$ tweak "-D"   -> get key binding.
+After use TWEAK
+$ SET TERMINAL/NOPASTHRU
+
+Exeptions TWEAK on OpenVMS:
+--------------------------------------------
+Keys PgUp, PgDn, Home and End does not work.
+Instead use:
+PgUp - ^XV;^Xv
+PgDn - ^V
+Home - ^A
+End  - ^E
+
+To go to position use:
+GOTO - ^XG;^Xg
+
+To copy:
+COPY - ^CW;^Cw
+
+To paste:
+PASTE - ^XY;^Xy
+
+To search:
+SEARCH - ^XS;^Xs
+----------------------------------------------------------------
+TWEAK does not keep file structure if editing simple text file.
+To understand this have a look at the example:
+Create a simple TEXT file on OpenVMS test.txt like this:
+----------------------------------------------------------------
+This is an EXAMPLE ...
+Row number 01.
+Row number 02.
+Row number 03.
+Row number 04.
+Row number 05.
+--------------------------------------------------------------------
+Let's have a look at this file:
+$ DUMP TEST.TXT
+
+Virtual block number 1 (00000001), 512 (0200) bytes
+
+ 41584520 6E612073 69207369 68540016 ..This is an EXA 000000
+ 756E2077 6F52000E 2E2E2E20 454C504D MPLE .....Row nu 000010
+ 756E2077 6F52000E 2E313020 7265626D mber 01...Row nu 000020
+ 756E2077 6F52000E 2E323020 7265626D mber 02...Row nu 000030
+ 756E2077 6F52000E 2E333020 7265626D mber 03...Row nu 000040
+ 756E2077 6F52000E 2E343020 7265626D mber 04...Row nu 000050
+ 00000000 0000FFFF 2E353020 7265626D mber 05......... 000060
+ 00000000 00000000 00000000 00000000 ................ 000070
+ 00000000 00000000 00000000 00000000 ................ 000080
+ 00000000 00000000 00000000 00000000 ................ 000090
+ 00000000 00000000 00000000 00000000 ................ 0000A0
+ 00000000 00000000 00000000 00000000 ................ 0000B0
+ 00000000 00000000 00000000 00000000 ................ 0000C0
+ 00000000 00000000 00000000 00000000 ................ 0000D0
+ 00000000 00000000 00000000 00000000 ................ 0000E0
+ 00000000 00000000 00000000 00000000 ................ 0000F0
+ 00000000 00000000 00000000 00000000 ................ 000100
+ 00000000 00000000 00000000 00000000 ................ 000110
+ 00000000 00000000 00000000 00000000 ................ 000120
+ 00000000 00000000 00000000 00000000 ................ 000130
+ 00000000 00000000 00000000 00000000 ................ 000140
+ 00000000 00000000 00000000 00000000 ................ 000150
+ 00000000 00000000 00000000 00000000 ................ 000160
+ 00000000 00000000 00000000 00000000 ................ 000170
+ 00000000 00000000 00000000 00000000 ................ 000180
+ 00000000 00000000 00000000 00000000 ................ 000190
+ 00000000 00000000 00000000 00000000 ................ 0001A0
+ 00000000 00000000 00000000 00000000 ................ 0001B0
+ 00000000 00000000 00000000 00000000 ................ 0001C0
+ 00000000 00000000 00000000 00000000 ................ 0001D0
+ 00000000 00000000 00000000 00000000 ................ 0001E0
+ 00000000 00000000 00000000 00000000 ................ 0001F0
+--------------------------------------------------------------------
+$ DUMP/HEADER/BLOCK=COUNT=0 TEST.TXT
+
+                             File Header
+
+Header area
+    Identification area offset:           40
+    Map area offset:                      100
+    Access control area offset:           255
+    Reserved area offset:                 255
+    Extension segment number:             0
+    Structure level and version:          2, 1
+    File identification:                  (152,17,0)
+    Extension file identification:        (0,0,0)
+    VAX-11 RMS attributes
+        Record type:                      Variable
+        File organization:                Sequential
+        Record attributes:                Implied carriage control
+        Record size:                      22
+        Highest block:                    3
+        End of file block:                1
+        End of file byte:                 104
+        Bucket size:                      0
+        Fixed control area size:          0
+        Maximum record size:              0
+        Default extension size:           0
+        Global buffer count:              0
+        Directory version limit:          0
+    File characteristics:                 <none specified>
+    Caching attribute:                    Writethrough
+    Map area words in use:                2
+    Access mode:                          0
+    File owner UIC:                       [XXXXX]
+    File protection:                      S:RWED, O:RWED, G:RE, W:
+    Back link file identification:        (63,5,0)
+    Journal control flags:                <none specified>
+    Active recovery units:                None
+    Highest block written:                1
+    Client attributes:                    None
+
+Identification area
+    File name:                            TEST.TXT;1
+    Revision number:                      1
+    Creation date:                         8-OCT-2018 09:44:02.96
+    Revision date:                         8-OCT-2018 09:44:19.57
+    Expiration date:                      <none specified>
+    Backup date:                          <none specified>
+
+Map area
+    Retrieval pointers
+        Count:          3        LBN:        213
+
+Checksum:                                 61059
+--------------------------------------------------------------------
+Have a look at the :
+    VAX-11 RMS attributes
+        Record type:                      Variable
+        File organization:                Sequential
+        Record attributes:                Implied carriage control
+        Record size:                      22
+        Highest block:                    3
+        End of file block:                1
+        End of file byte:                 104
+*************************************************
+!!! So TWEAK does not keep this file attributes
+*************************************************
+
+Let's change (overwrite) any symbol in the file TEST.TXT
+with TWEAK and then save the file.
+
+$ DUMP TEST.TXT
+
+File ID (160,14,0)   End of file block 1 / Allocated 3
+
+Virtual block number 1 (00000001), 512 (0200) bytes
+
+ 00730001 00690001 00680001 00540001 ..T...h...i...s. 000000
+ 00200001 00730001 00690001 00200001 .. ...i...s... . 000010
+ 00450001 00200001 006E0001 00610001 ..a...n... ...E. 000020
+ 00500001 004D0001 00410001 00580001 ..X...A...M...P. 000030
+ 002E0001 00200001 00450001 004C0001 ..L...E... ..... 000040
+ 006F0001 00520001 002E0001 002E0001 ..........R...o. 000050
+ 00750001 006E0001 00200001 00770001 ..w... ...n...u. 000060
+ 00720001 00650001 00620001 006D0001 ..m...b...e...r. 000070
+ 002E0001 00310001 00300001 00200001 .. ...0...1..... 000080
+ 00200001 00770001 006F0001 00520001 ..R...o...w... . 000090
+ 00620001 006D0001 00750001 006E0001 ..n...u...m...b. 0000A0
+ 00300001 00200001 00720001 00650001 ..e...r... ...0. 0000B0
+ 006F0001 00520001 002E0001 00320001 ..2.......R...o. 0000C0
+ 00750001 006E0001 00200001 00770001 ..w... ...n...u. 0000D0
+ 00720001 00650001 00620001 006D0001 ..m...b...e...r. 0000E0
+ 002E0001 00330001 00300001 00200001 .. ...0...3..... 0000F0
+ 00200001 00770001 006F0001 00520001 ..R...o...w... . 000100
+ 00620001 006D0001 00750001 006E0001 ..n...u...m...b. 000110
+ 00300001 00200001 00720001 00650001 ..e...r... ...0. 000120
+ 006F0001 00520001 002E0001 00340001 ..4.......R...o. 000130
+ 00750001 006E0001 00200001 00770001 ..w... ...n...u. 000140
+ 00720001 00650001 00620001 006D0001 ..m...b...e...r. 000150
+ 002E0001 00350001 00300001 00200001 .. ...0...5..... 000160
+ 00000001 00000001 00000001 00000001 ................ 000170
+ 00000001 00000001 00000001 00000001 ................ 000180
+ 00000001 00000001 00000001 00000001 ................ 000190
+ 00000000 00000000 00000000 0000FFFF ................ 0001A0
+ 00000000 00000000 00000000 00000000 ................ 0001B0
+ 00000000 00000000 00000000 00000000 ................ 0001C0
+ 00000000 00000000 00000000 00000000 ................ 0001D0
+ 00000000 00000000 00000000 00000000 ................ 0001E0
+ 00000000 00000000 00000000 00000000 ................ 0001F0
+
+And
+$ $ DUMP/HEADER/BLOCK=COUNT=0 TEST.TXT
+
+File ID (160,14,0)   End of file block 1 / Allocated 3
+
+                             File Header
+
+Header area
+    Identification area offset:           40
+    Map area offset:                      100
+    Access control area offset:           255
+    Reserved area offset:                 255
+    Extension segment number:             0
+    Structure level and version:          2, 1
+    File identification:                  (160,14,0)
+    Extension file identification:        (0,0,0)
+    VAX-11 RMS attributes
+        Record type:                      Variable
+        File organization:                Sequential
+        Record attributes:                Implied carriage control
+        Record size:                      1
+        Highest block:                    3
+        End of file block:                1
+        End of file byte:                 416
+        Bucket size:                      0
+        Fixed control area size:          0
+        Maximum record size:              0
+        Default extension size:           0
+        Global buffer count:              0
+        Directory version limit:          0
+    File characteristics:                 <none specified>
+    Caching attribute:                    Writethrough
+    Map area words in use:                2
+    Access mode:                          0
+    File owner UIC:                       [XXXXX]
+    File protection:                      S:RWED, O:RWED, G:RE, W:
+    Back link file identification:        (63,5,0)
+    Journal control flags:                <none specified>
+    Active recovery units:                None
+    Highest block written:                3
+    Client attributes:                    None
+
+Identification area
+    File name:                            TEST.TXT;2
+    Revision number:                      1
+    Creation date:                         8-OCT-2018 09:53:56.07
+    Revision date:                         8-OCT-2018 09:53:56.14
+    Expiration date:                      <none specified>
+    Backup date:                          <none specified>
+
+Map area
+    Retrieval pointers
+        Count:          3        LBN:        219
+
+Checksum:                                 43750
+--------------------------------------------------------------------
+Have a look at the:
+    VAX-11 RMS attributes
+        Record type:                      Variable
+        File organization:                Sequential
+        Record attributes:                Implied carriage control
+        Record size:                      1
+        Highest block:                    3
+        End of file block:                1
+        End of file byte:                 416
+--------------------------------------------------------------------
+And let's compare VAX-11 RMS attributes TEST.TXT;1 and TEST.TXT;2
+
+    VAX-11 RMS attributes
+        Record type:                      Variable
+        File organization:                Sequential
+        Record attributes:                Implied carriage control
+        Record size:                      22
+        Highest block:                    3
+        End of file block:                1
+        End of file byte:                 104
+
+    VAX-11 RMS attributes
+        Record type:                      Variable
+        File organization:                Sequential
+        Record attributes:                Implied carriage control
+        Record size:                      1
+        Highest block:                    3
+        End of file block:                1
+        End of file byte:                 416
+********************************************************************
+TWEAK screen look like this:
+-----------
+TEST.TXT;1
+-----------
+00000000   54 68 69 73 20 69 73 20 61 6E 20 45 58 41 4D 50   This is an EXAMP
+00000010   4C 45 20 2E 2E 2E 52 6F 77 20 6E 75 6D 62 65 72   LE ...Row number
+00000020   20 30 31 2E 52 6F 77 20 6E 75 6D 62 65 72 20 30    01.Row number 0
+00000030   32 2E 52 6F 77 20 6E 75 6D 62 65 72 20 30 33 2E   2.Row number 03.
+00000040   52 6F 77 20 6E 75 6D 62 65 72 20 30 34 2E 52 6F   Row number 04.Ro
+00000050   77 20 6E 75 6D 62 65 72 20 30 35 2E 00 00 00 00   w number 05.....
+00000060   00 00 00 00 00 00 00 00                           ........
+
+-----------
+TEST.TXT;2
+-----------
+00000000   54 68 69 73 20 69 73 20 61 6E 20 45 58 41 4D 50   This is an EXAMP
+00000010   4C 45 20 2E 2E 2E 52 6F 77 20 6E 75 6D 62 65 72   LE ...Row number
+00000020   20 30 31 2E 52 6F 77 20 6E 75 6D 62 65 72 20 30    01.Row number 0
+00000030   32 2E 52 6F 77 20 6E 75 6D 62 65 72 20 30 33 2E   2.Row number 03.
+00000040   52 6F 77 20 6E 75 6D 62 65 72 20 30 34 2E 52 6F   Row number 04.Ro
+00000050   77 20 6E 75 6D 62 65 72 20 30 35 2E 00 00 00 00   w number 05.....
+00000060   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+00000070   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+00000080   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+00000090   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+000000A0   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+000000B0   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+000000C0   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+000000D0   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+000000E0   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+000000F0   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+00000100   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+00000110   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+00000120   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+00000130   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+00000140   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+00000150   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+00000160   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+00000170   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+00000180   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+00000190   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+
+********************************************************************
+But if you will be use TWEAK to edit binary file that will be OK.
+
+Example VAX-11 RMS attributes:
+
+    VAX-11 RMS attributes
+        Record type:                      Fixed
+        File organization:                Sequential
+        Record attributes:                <none specified>
+        Record size:                      512
+        Highest block:                    105
+        End of file block:                105
+        End of file byte:                 0
+        Bucket size:                      0
+        Fixed control area size:          0
+        Maximum record size:              512
+********************************************************************
